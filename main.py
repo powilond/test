@@ -78,7 +78,7 @@ def get_socks(
 ):
     # Проверка корректности входных данных
     if operation not in ["moreThan", "lessThan", "equal"]:
-        raise HTTPException(status_code=400, detail="Invalid operation. Use: moreThan, lessThan, or equal")
+        raise HTTPException(status_code=400, detail="Invalid operation. Allowed values: moreThan, lessThan, equal")
     if not (0 <= cottonPart <= 100):
         raise HTTPException(status_code=400, detail="cottonPart must be between 0 and 100")
 
@@ -94,5 +94,10 @@ def get_socks(
 
     # Подсчет общего количества носков
     total_quantity = sum(s.quantity for s in query.all())
+    if total_quantity == 0:
+        raise HTTPException(
+            status_code=404,
+            detail="No socks found matching the given criteria"
+        )
 
     return {"total_quantity": total_quantity}
