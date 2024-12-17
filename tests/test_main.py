@@ -1,50 +1,133 @@
+import pytest
 from fastapi.testclient import TestClient
 from main import app
-from main import app  # Импортируем FastAPI приложение
-import sys
-import os
+from models import Base
+from database import engine
 
-# Добавляем корневую директорию проекта в sys.path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+# Фикстура для очистки и подготовки базы данных перед каждым тестом
+@pytest.fixture(scope="function")
+def client():
+    # Создаем все таблицы перед запуском теста
+    Base.metadata.create_all(bind=engine)
+    with TestClient(app) as c:
+        yield c
+    # Удаляем все таблицы после завершения теста
+    Base.metadata.drop_all(bind=engine)
 
-client = TestClient(app)
-
-# Тест на успешный запрос с корректными параметрами
-def test_get_socks_success():
-    response = client.get("/api/socks", params={
+# Тесты для POST /api/socks/income
+def test_post_socks_income_success(client):
+    response = client.post("/api/socks/income", json={
         "color": "red",
-        "operation": "moreThan",
-        "cottonPart": 30
+        "cottonPart": 50,
+        "quantity": 100
     })
     assert response.status_code == 200
-    assert "total_quantity" in response.json()
+    assert response.json() == {"message": "Поступление носков успешно зарегистрировано"}
 
-# Тест на некорректное значение operation
-def test_get_socks_invalid_operation():
-    response = client.get("/api/socks", params={
+def test_post_socks_income_invalid_data(client):
+    # Некорректное количество
+    response = client.post("/api/socks/income", json={
         "color": "red",
-        "operation": "invalid",
-        "cottonPart": 30
+        "cottonPart": 50,
+        "quantity": -10
     })
     assert response.status_code == 400
-    assert response.json()["detail"] == "Invalid operation. Allowed values: moreThan, lessThan, equal"
+    assert "Неверные параметры" in response.json()["detail"]
 
-# Тест на недопустимое значение cottonPart
-def test_get_socks_invalid_cotton_part():
+    # Некорректный процент хлопка
+    response = client.post("/api/socks/income", json={
+        "color": "red",
+        "cottonPart": 120,
+        "quantity": 10
+    })
+    assert response.status_code == 400
+    assert "Неверные параметры" in response.json()["detail"]
+
+# Тесты для POST /api/socks/outcome
+def test_post_socks_outcome_success(client):
+    # Добавляем носки на склад
+    client.post("/api/socks/income", json={
+        "color": "blue",
+        "cottonPart": 70,
+        "quantity": 50
+    })
+
+    # Отпускаем часть носков
+    response = client.post("/api/socks/outcome", json={
+        "color": "blue",
+        "cottonPart": 70,
+        "quantity": 30
+    })
+    assert response.status_code == 200
+    assert response.json()["message"] == "Носки успешно выданы"
+    assert response.json()["remaining"] == 20
+
+def test_post_socks_outcome_not_enough_quantity(client):
+    # Добавляем носки на склад
+    client.post("/api/socks/income", json={
+        "color": "blue",
+        "cottonPart": 70,
+        "quantity": 10
+    })
+
+    # Пытаемся отпустить больше, чем есть
+    response = client.post("/api/socks/outcome", json={
+        "color": "blue",
+        "cottonPart": 70,
+        "quantity": 20
+    })
+    assert response.status_code == 400
+    assert "Not enough socks in stock" in response.json()["detail"]
+
+def test_post_socks_outcome_not_found(client):
+    # Пытаемся отпустить несуществующие носки
+    response = client.post("/api/socks/outcome", json={
+        "color": "green",
+        "cottonPart": 30,
+        "quantity": 10
+    })
+    assert response.status_code == 400
+    assert "Socks not found in the warehouse" in response.json()["detail"]
+
+# Тесты для GET /api/socks
+def test_get_socks_success(client):
+    # Добавляем носки на склад
+    client.post("/api/socks/income", json={
+        "color": "red",
+        "cottonPart": 50,
+        "quantity": 100
+    })
+    client.post("/api/socks/income", json={
+        "color": "red",
+        "cottonPart": 80,
+        "quantity": 50
+    })
+
+    # Запрос на носки с cottonPart > 40
     response = client.get("/api/socks", params={
         "color": "red",
         "operation": "moreThan",
-        "cottonPart": 150
+        "cottonPart": 40
     })
-    assert response.status_code == 400
-    assert response.json()["detail"] == "cottonPart must be between 0 and 100"
+    assert response.status_code == 200
+    assert response.json()["total_quantity"] == 150
 
-# Тест на случай, если носки не найдены
-def test_get_socks_not_found():
+def test_get_socks_not_found(client):
+    # Запрос на несуществующие носки
     response = client.get("/api/socks", params={
         "color": "purple",
         "operation": "equal",
         "cottonPart": 50
     })
     assert response.status_code == 404
-    assert response.json()["detail"] == "No socks found matching the given criteria"
+    assert "No socks found matching the given criteria" in response.json()["detail"]
+
+def test_get_socks_invalid_operation(client):
+    # Некорректная операция
+    response = client.get("/api/socks", params={
+        "color": "red",
+        "operation": "invalid",
+        "cottonPart": 50
+    })
+    assert response.status_code == 400
+    assert "Invalid operation" in response.json()["detail"]
