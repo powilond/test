@@ -1,21 +1,11 @@
-from sqlalchemy import Column, Integer, String, create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy import Column, Integer, String
+from database import Base
 
-DATABASE_URL = "sqlite:///./socks.db"  # Подключение к SQLite
-
-Base = declarative_base()
-
-# Модель для носков
+# Создание модели для таблицы "socks"
 class Socks(Base):
-    __tablename__ = "socks"
+    __tablename__ = "socks"  # Название таблицы в базе данных
 
-    id = Column(Integer, primary_key=True, index=True)
-    color = Column(String, nullable=False)
-    cottonPart = Column(Integer, nullable=False)
-    quantity = Column(Integer, nullable=False)
-
-# Создание базы данных
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-Base.metadata.create_all(bind=engine)
+    id = Column(Integer, primary_key=True, index=True)  # Уникальный идентификатор
+    color = Column(String, nullable=False)  # Цвет носков
+    cottonPart = Column(Integer, nullable=False)  # Процент хлопка
+    quantity = Column(Integer, nullable=False)  # Количество пар носков
